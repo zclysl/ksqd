@@ -94,7 +94,7 @@ Windows 桌面软件快速启动器。一个常驻系统托盘的小程序：按
 npm install       # 安装依赖
 npm start         # 直接运行（Electron）
 npm run dist      # 打包 Windows NSIS 安装器，产物在 dist/
-npm run test:unit # 跑单元测试
+npm run test:unit # 跑单元测试（测试文件不进库，克隆后无此命令的脚本）
 ```
 
 目录结构：
@@ -103,7 +103,7 @@ npm run test:unit # 跑单元测试
 - `src/renderer/` —— 面板界面
 - `src/preload/` —— 渲染进程与主进程之间的桥接
 - `build/` —— 打包资源（图标、安装脚本）
-- `docs/` —— 需求档、设计档、批次记录；单元测试随批次记录放在 `docs/batches/`
+- `docs/` —— 需求档、设计档；开发过程档案（`docs/batches/`，含单元测试）只留本机，不进库
 
 ## 许可
 
