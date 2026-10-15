@@ -11,6 +11,9 @@ dist/
 .workbuddy/
 PROJECT-MANIFEST.json
 
+# 本机开发约定（引用 .workbuddy/ 下的本机路径，不进库）
+AGENTS.md
+
 # 开发过程档案（批次记录 + 随批单元测试 + 探针脚本）
 # 仅留本地，不进库
 docs/batches/
