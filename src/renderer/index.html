@@ -1,0 +1,27 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'self'; style-src 'self'; img-src 'self' data:; font-src 'self'; connect-src 'none'">
+  <title>速启</title>
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+  <div id="panel" class="panel">
+    <header class="topbar">
+      <img id="app-icon" class="topbar-icon" alt="">
+      <h1 class="topbar-title">速启</h1>
+      <button id="btn-add" class="btn-add" type="button">＋ 添加软件</button>
+    </header>
+    <nav id="tabbar" class="tabbar" aria-label="分类标签"></nav>
+    <main id="content" class="content"></main>
+    <div id="toast" class="toast" role="status" hidden></div>
+  </div>
+  <!-- 经典脚本按 ui.js → components.js → interactions.js → renderer.js 顺序加载（file:// 下 Chromium 以 CORS 拦截
+       ES 模块脚本，Electron 的 loadFile 走同一加载器，故不采用模块脚本）；无内联脚本。 -->
+  <script src="./ui.js"></script>
+  <script src="./components.js"></script>
+  <script src="./interactions.js"></script>
+  <script src="./renderer.js"></script>
+</body>
+</html>

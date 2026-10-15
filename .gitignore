@@ -1,0 +1,16 @@
+# 依赖
+node_modules/
+
+# 构建产物（安装包体积大，发版走 GitHub Release，不进库）
+dist/
+# build/ 不忽略：它是手写打包资源（icon.ico / installer.nsh），
+# electron-builder.yml:15,31,32,34 直接引用，缺了无法打包
+
+# 本机工程状态（ThinCoder 会话/台账/临时探针，不属产品）
+.thincoder/
+.workbuddy/
+PROJECT-MANIFEST.json
+
+# 运行期临时物
+*.log
+Thumbs.db

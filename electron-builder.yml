@@ -1,0 +1,36 @@
+# 速启 · electron-builder 打包配置（设计档 4.12 / F5）
+appId: io.thincoder.suqi
+productName: 速启
+
+directories:
+  output: dist
+
+# 文件白名单：仅 src/ 与应用元数据入包（docs/、批次档、node_modules 不入包）
+files:
+  - src/**/*
+  - package.json
+
+win:
+  # 应用图标（exe / 桌面快捷方式 / 开始菜单）：build/icon.ico 含 16~256 七档尺寸
+  icon: build/icon.ico
+  target:
+    - target: nsis
+      arch:
+        - x64
+
+nsis:
+  oneClick: false
+  allowToChangeInstallationDirectory: true
+  perMachine: false
+  createDesktopShortcut: true
+  createStartMenuShortcut: true
+  shortcutName: 速启
+  deleteAppDataOnUninstall: false
+  artifactName: Suqi-Setup-${version}.exe
+  # 安装 / 卸载程序图标（不设会回落到应用图标，此处显式声明，避免日后改动失联）
+  installerIcon: build/icon.ico
+  uninstallerIcon: build/icon.ico
+  # 自定义卸载宏：清理开机自启登记（build/installer.nsh）
+  include: build/installer.nsh
+
+publish: null

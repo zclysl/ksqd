@@ -1,0 +1,20 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'self'; style-src 'self'; img-src 'self' data:; font-src 'self'; connect-src 'none'">
+  <title>快捷键设置</title>
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+  <!-- 快捷键录制小窗（F1.5 / 4.14，360×160 无边框）：
+       当前组合显示行（读 settings.hotkey）+ 提示行兼消息行 + 「关闭」按钮；无候选态 / 无确认按钮。 -->
+  <div class="hotkey-card">
+    <div id="hotkey-current" class="hotkey-current"></div>
+    <div id="hotkey-hint" class="hotkey-hint" role="status">按下新的组合…</div>
+    <button id="hotkey-close" class="btn btn-ghost" type="button">关闭</button>
+  </div>
+  <!-- 经典脚本（与 index.html 同制式：file:// 下 Chromium 以 CORS 拦截 ES 模块脚本）；无内联脚本。 -->
+  <script src="./hotkey-window.js"></script>
+</body>
+</html>

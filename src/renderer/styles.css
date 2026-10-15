@@ -1,0 +1,431 @@
+/* 速启 · 面板样式（深色极简；配色取设计档 §12 原值）
+   面板：720×480 无边框透明卡片、圆角 14px、显示动画 120ms；主体区内部滚动。 */
+
+* { margin: 0; padding: 0; box-sizing: border-box; }
+[hidden] { display: none !important; }
+html, body { height: 100%; }
+
+body {
+  padding: 8px; /* 透明阴影边距：卡片外为窗口垫边 */
+  background: transparent;
+  font-family: "Microsoft YaHei UI", system-ui;
+  font-size: 13px;
+  color: #e8eaed;
+  overflow: hidden;
+  user-select: none;
+  cursor: default;
+}
+
+/* ---------- 卡片 ---------- */
+
+.panel {
+  position: relative; /* 弹出层（菜单 / 浮层）的定位基准 */
+  height: 100%;
+  display: flex; flex-direction: column;
+  background: #1a1c20;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 14px;
+  box-shadow: 0 12px 32px rgba(0, 0, 0, 0.5);
+  overflow: hidden;
+}
+
+/* 显示动画：opacity 0→1、translateY 4px→0、120ms（面板每次显示时重放） */
+.panel.is-showing { animation: panel-in 120ms ease-out; }
+
+@keyframes panel-in {
+  from { opacity: 0; transform: translateY(4px); }
+  to { opacity: 1; transform: none; }
+}
+
+/* ---------- 顶栏 ---------- */
+
+.topbar {
+  flex: 0 0 auto;
+  height: 46px;
+  display: flex; align-items: center; justify-content: space-between;
+  padding: 0 14px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+.topbar-title { font-size: 14px; font-weight: 600; letter-spacing: 0.5px; margin-right: auto; }
+
+/* 面板顶栏图标（F7.3 / 4.17）：20×20 定尺、与标题垂直居中（顶栏 flex 居中即齐平）；
+   display:none 直到拿到 dataUrl 再显示（.visible）；深色面板下的可辨识性由图标自身橙底保证 */
+.topbar-icon {
+  flex: 0 0 auto;
+  width: 20px; height: 20px;
+  margin-right: 8px;
+  display: none;
+}
+
+.topbar-icon.visible { display: block; }
+
+.btn-add {
+  padding: 6px 10px;
+  font: inherit; font-size: 13px;
+  color: #4c8dff;
+  background: transparent; border: none;
+  border-radius: 8px;
+  cursor: pointer;
+}
+
+.btn-add:hover { background: rgba(76, 141, 255, 0.12); }
+.btn-add:active { background: rgba(76, 141, 255, 0.2); }
+
+/* ---------- 分类标签页栏（单行横向；溢出时横向滚动） ---------- */
+
+.tabbar {
+  flex: 0 0 auto;
+  height: 40px;
+  display: flex; align-items: center;
+  gap: 2px;
+  padding: 0 8px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+  overflow-x: auto; overflow-y: hidden;
+  white-space: nowrap;
+  scrollbar-width: none; /* 滚动条隐藏 */
+}
+
+.tabbar::-webkit-scrollbar { display: none; }
+
+.tab {
+  position: relative;
+  flex: 0 0 auto;
+  height: 100%;
+  display: inline-flex; align-items: center;
+  gap: 6px;
+  padding: 0 10px;
+  color: #9aa0a6;
+  border-radius: 6px;
+  cursor: pointer;
+}
+
+.tab:hover { background: rgba(255, 255, 255, 0.06); }
+.tab.active { color: #e8eaed; }
+
+/* 选中态：亮色文字 + 底部 2px 强调色指示条 */
+.tab.active::after {
+  content: "";
+  position: absolute; left: 8px; right: 8px; bottom: 0;
+  height: 2px;
+  border-radius: 1px;
+  background: #4c8dff;
+}
+
+.tab-name { max-width: 140px; overflow: hidden; text-overflow: ellipsis; }
+
+.tab-menu-btn {
+  width: 18px; height: 18px;
+  display: inline-flex; align-items: center; justify-content: center;
+  padding: 0;
+  font: inherit; font-size: 13px; line-height: 1;
+  color: #9aa0a6;
+  background: transparent; border: none;
+  border-radius: 4px;
+  cursor: pointer;
+  opacity: 0; /* hover 或菜单打开时显示 */
+}
+
+.tab:hover .tab-menu-btn,
+.tab.menu-open .tab-menu-btn { opacity: 1; }
+
+.tab-menu-btn:hover { background: rgba(255, 255, 255, 0.1); color: #e8eaed; }
+
+/* 标签原位行内输入（新建 / 重命名） */
+.tab-input {
+  flex: 0 0 auto;
+  width: 120px; height: 26px;
+  margin: 0 4px; padding: 0 8px;
+  font: inherit; font-size: 13px;
+  color: #e8eaed;
+  background: rgba(255, 255, 255, 0.06);
+  border: 1px solid #4c8dff;
+  border-radius: 6px;
+  outline: none;
+  user-select: text;
+}
+
+/* 「＋ 新建分类」幽灵按钮 */
+.tab-new {
+  flex: 0 0 auto;
+  margin-left: 6px; padding: 4px 10px;
+  font: inherit; font-size: 12px;
+  color: #9aa0a6;
+  background: transparent;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 6px;
+  cursor: pointer;
+}
+
+.tab-new:hover { color: #e8eaed; background: rgba(255, 255, 255, 0.06); border-color: rgba(255, 255, 255, 0.2); }
+
+/* ---------- 内容区 ---------- */
+
+.content {
+  flex: 1 1 auto;
+  min-height: 0;
+  display: flex; flex-direction: column;
+  overflow-y: auto;
+  padding: 14px;
+}
+
+.content::-webkit-scrollbar { width: 8px; }
+.content::-webkit-scrollbar-thumb { background: rgba(255, 255, 255, 0.12); border-radius: 4px; }
+.content::-webkit-scrollbar-thumb:hover { background: rgba(255, 255, 255, 0.2); }
+
+/* 图标网格（32px 图标 + 名称） */
+.grid {
+  flex: 0 0 auto;
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(92px, 1fr));
+  gap: 6px;
+  align-content: start;
+}
+
+.item {
+  display: flex; flex-direction: column; align-items: center;
+  gap: 6px;
+  padding: 10px 6px 8px;
+  border-radius: 10px;
+  cursor: pointer;
+}
+
+.item:hover { background: rgba(255, 255, 255, 0.06); }
+
+.item-icon { width: 32px; height: 32px; display: flex; align-items: center; justify-content: center; }
+.item-icon img { width: 32px; height: 32px; border-radius: 6px; -webkit-user-drag: none; }
+
+/* 取不到图标时的首字符圆角块占位（零资产） */
+.icon-fallback {
+  width: 32px; height: 32px;
+  display: flex; align-items: center; justify-content: center;
+  background: rgba(76, 141, 255, 0.18);
+  color: #4c8dff;
+  font-size: 14px;
+  border-radius: 8px;
+}
+
+.item-name {
+  width: 100%;
+  text-align: center;
+  font-size: 12px;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+
+/* 空态：当前分类为空（虚线占位）/ 全部为空（两行引导） */
+.empty-category {
+  flex: 1 1 auto;
+  min-height: 150px;
+  display: flex; align-items: center; justify-content: center;
+  color: #9aa0a6;
+  border: 1px dashed rgba(255, 255, 255, 0.16);
+  border-radius: 12px;
+}
+
+.empty-guide {
+  flex: 1 1 auto;
+  min-height: 150px;
+  display: flex; flex-direction: column; align-items: center; justify-content: center;
+  gap: 8px;
+}
+
+.empty-guide-main { font-size: 13.5px; color: #e8eaed; }
+.empty-guide-sub { font-size: 12px; color: #9aa0a6; }
+
+/* 分类删除确认条（内容区顶部） */
+.confirm-bar {
+  flex: 0 0 auto;
+  display: flex; align-items: center;
+  gap: 12px;
+  margin-bottom: 12px;
+  padding: 10px 12px;
+  background: rgba(255, 255, 255, 0.04);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 10px;
+}
+
+.confirm-bar-text {
+  flex: 1 1 auto;
+  min-width: 0;
+  font-size: 12.5px;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+
+/* ---------- 按钮 ---------- */
+
+.confirm-actions { flex: 0 0 auto; display: flex; gap: 8px; }
+
+.btn {
+  padding: 5px 12px;
+  font: inherit; font-size: 12px;
+  border: 1px solid transparent;
+  border-radius: 8px;
+  cursor: pointer;
+}
+
+.btn-primary { background: #4c8dff; color: #ffffff; }
+.btn-primary:hover { background: #5f9aff; }
+.btn-ghost { background: transparent; border-color: rgba(255, 255, 255, 0.12); color: #9aa0a6; }
+.btn-ghost:hover { background: rgba(255, 255, 255, 0.06); color: #e8eaed; }
+
+/* ---------- 弹出菜单 / 行内确认（绝对定位在卡片内） ---------- */
+
+.menu {
+  position: absolute;
+  z-index: 50;
+  min-width: 128px;
+  padding: 4px;
+  background: #24272d;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 10px;
+  box-shadow: 0 10px 26px rgba(0, 0, 0, 0.5);
+}
+
+.menu-item {
+  display: block;
+  width: 100%;
+  padding: 7px 10px;
+  font: inherit; font-size: 12.5px;
+  text-align: left;
+  color: #e8eaed;
+  background: transparent; border: none;
+  border-radius: 6px;
+  cursor: pointer;
+}
+
+.menu-item:hover { background: rgba(255, 255, 255, 0.06); }
+
+.menu-confirm { min-width: 210px; max-width: 280px; padding: 10px 10px 8px; }
+.menu-confirm-text { margin-bottom: 10px; font-size: 12.5px; line-height: 1.5; }
+.menu-confirm .confirm-actions { justify-content: flex-end; }
+
+/* ---------- 添加 / 编辑浮层 ---------- */
+
+.overlay {
+  position: absolute;
+  inset: 0;
+  z-index: 80;
+  display: flex; align-items: center; justify-content: center;
+  background: rgba(10, 11, 13, 0.55);
+}
+
+.form-card {
+  width: 400px;
+  max-width: calc(100% - 40px);
+  padding: 16px;
+  background: #24272d;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 12px;
+  box-shadow: 0 16px 40px rgba(0, 0, 0, 0.55);
+}
+
+.form-title { margin-bottom: 14px; font-size: 13.5px; font-weight: 600; }
+.form-row { display: flex; align-items: center; gap: 10px; }
+.form-row + .form-row { margin-top: 10px; }
+.form-label { flex: 0 0 40px; font-size: 12px; color: #9aa0a6; }
+
+.form-input,
+.form-select {
+  flex: 1 1 auto;
+  min-width: 0;
+  height: 30px;
+  padding: 0 10px;
+  font: inherit; font-size: 12.5px;
+  color: #e8eaed;
+  background: rgba(255, 255, 255, 0.06);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 8px;
+  outline: none;
+  user-select: text;
+}
+
+.form-input:focus,
+.form-select:focus { border-color: #4c8dff; }
+
+.form-select option { background: #24272d; color: #e8eaed; }
+
+/* 目标路径只读行 */
+.form-path {
+  flex: 1 1 auto;
+  min-width: 0;
+  font-size: 12px;
+  color: #9aa0a6;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+
+/* ---------- 底部 toast（常规 3s / 错误 5s，单条） ---------- */
+
+.toast {
+  position: absolute; left: 50%; bottom: 16px;
+  z-index: 100;
+  max-width: calc(100% - 48px);
+  padding: 8px 14px;
+  transform: translateX(-50%);
+  background: #24272d;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 8px;
+  box-shadow: 0 10px 26px rgba(0, 0, 0, 0.5);
+  font-size: 12.5px;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  pointer-events: none;
+}
+
+/* ---------- 悬停切标签（F2.6）/ 拖动排序（F3.8） ---------- */
+
+/* 悬停切换过渡（十二节）：标签底色与文字沿 120ms 节奏 */
+.tab { transition: background 120ms ease-out, color 120ms ease-out; }
+
+/* 拖动态：原位节点 = 半透明占位（十二节）；占位高亮便于辨认落点 */
+.item.is-dragging {
+  opacity: 0.4;
+  background: rgba(76, 141, 255, 0.08);
+  outline: 1px dashed rgba(76, 141, 255, 0.25);
+}
+
+/* 拖动态光标 grabbing（十二节） */
+.panel.is-reordering,
+.panel.is-reordering * { cursor: grabbing; }
+
+/* clone 影：随光标固定定位、1.02 缩放、圆角同条目（十二节）；落位 / 取消归位动画 120ms */
+.drag-ghost {
+  position: fixed;
+  z-index: 200;
+  pointer-events: none;
+  transform: scale(1.02);
+  border-radius: 10px;
+  background: #24272d;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  box-shadow: 0 10px 26px rgba(0, 0, 0, 0.5);
+}
+
+/* ---------- 快捷键录制小窗（F1.5 / 4.14） ---------- */
+
+.hotkey-card {
+  height: 100%;
+  display: flex; flex-direction: column; align-items: center; justify-content: center;
+  gap: 10px;
+  padding: 14px 16px;
+  background: #1a1c20;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 14px;
+  box-shadow: 0 12px 32px rgba(0, 0, 0, 0.5);
+}
+
+/* 当前组合显示行（读 settings.hotkey，3.1 #1） */
+.hotkey-current {
+  max-width: 100%;
+  padding: 8px 16px;
+  font-size: 17px; font-weight: 600;
+  color: #e8eaed;
+  background: rgba(255, 255, 255, 0.06);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 10px;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+
+/* 提示行兼消息行（拒绝 / 落盘失败文案就地显示，4.14） */
+.hotkey-hint {
+  min-height: 17px;
+  font-size: 12.5px;
+  color: #9aa0a6;
+}

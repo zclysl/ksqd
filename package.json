@@ -1,0 +1,19 @@
+{
+  "name": "suqi",
+  "version": "1.5.0",
+  "description": "速启 —— Windows 桌面软件快速启动器（常驻托盘 + 全局热键面板）",
+  "private": true,
+  "type": "module",
+  "main": "src/main/main.js",
+  "scripts": {
+    "start": "electron .",
+    "dist": "electron-builder --win nsis --publish never",
+    "test:unit": "node --test docs/batches/v1-速启启动器.unit.test.mjs docs/batches/v1.1-图标容错.unit.test.mjs docs/batches/v1.2-未分类改名.unit.test.mjs docs/batches/v1.3-交互增强.unit.test.mjs docs/batches/v1.4-交互与健壮性.unit.test.mjs docs/batches/v1.5-图标自愈.unit.test.mjs"
+  },
+  "author": "thincoder",
+  "license": "UNLICENSED",
+  "devDependencies": {
+    "electron": "^44.5.1",
+    "electron-builder": "^26.15.3"
+  }
+}
