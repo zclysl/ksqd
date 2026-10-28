@@ -17,10 +17,15 @@
     <main id="content" class="content"></main>
     <div id="toast" class="toast" role="status" hidden></div>
   </div>
-  <!-- 经典脚本按 ui.js → components.js → interactions.js → renderer.js 顺序加载（file:// 下 Chromium 以 CORS 拦截
-       ES 模块脚本，Electron 的 loadFile 走同一加载器，故不采用模块脚本）；无内联脚本。 -->
+  <!-- 经典脚本按 ui.js → components.js → category-panel.js → item-actions.js → drag-core.js → interactions.js
+       → renderer.js 顺序加载（file:// 下 Chromium 以 CORS 拦截 ES 模块脚本，Electron 的 loadFile 走同一加载器，
+       故不采用模块脚本）；无内联脚本。drag-core 先于 interactions（后者取 window.SuqiDragCore）；
+       category-panel / item-actions 先于调用面 renderer.js；renderer.js 恒最后。 -->
   <script src="./ui.js"></script>
   <script src="./components.js"></script>
+  <script src="./category-panel.js"></script>
+  <script src="./item-actions.js"></script>
+  <script src="./drag-core.js"></script>
   <script src="./interactions.js"></script>
   <script src="./renderer.js"></script>
 </body>

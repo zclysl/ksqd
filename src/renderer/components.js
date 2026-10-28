@@ -1,6 +1,6 @@
 // 速启 · components.js —— 浮动交互组件层（弹出菜单 / 行内确认 / 添加编辑浮层 / 底部 toast）
-// 职责：组件的节点生命周期、面板内定位、键盘与点外关闭，以及各组件的打开态（微状态）；
-// 分类管理编排（标签「⋯」菜单打开 / 分类行内输入 / 删除确认条）同域承接（6.3 拆分计划）。
+// 职责：组件的节点生命周期、面板内定位、键盘与点外关闭，以及各组件的打开态（微状态）。
+// 分类管理编排已迁出到 category-panel.js（6.8 #7）：本文件只留浮层 / 菜单 / 确认浮层与 toast。
 // 边界：不发 IPC、不读写业务数据——动作经回调交回 renderer。
 // 加载形态：经典脚本（file:// 下 Chromium 以 CORS 拦截 ES 模块脚本）；依赖 window.SuqiUI。
 (function (global) {
@@ -63,18 +63,6 @@
     anchorEl.classList.add('menu-open');
   }
 
-  // opts: { anchorEl, onEdit, onDelete }
-  function openItemMenu(opts) {
-    openMenu(
-      opts.anchorEl,
-      [{ label: '编辑…', action: 'edit' }, { label: '删除', action: 'delete' }],
-      (action) => {
-        if (action === 'edit') opts.onEdit();
-        else if (action === 'delete') opts.onDelete();
-      },
-    );
-  }
-
   function closeMenu() {
     if (!menuEl) return;
     menuAnchor.classList.remove('menu-open');
@@ -90,6 +78,8 @@
   function openConfirm(opts) {
     closeConfirm();
     const el = ui.buildConfirmPop(opts.text);
+    // 4.20：确认动作只从 click 面产生——焦点 + 原生激活（焦点在「删除」上按 Enter / Space，
+    // 由浏览器派发一次 click）；只删一次靠 click 收口幂等（先 closeConfirm 移除节点，再激活无落点）
     el.addEventListener('click', (e) => {
       const btn = e.target.closest('[data-action]');
       if (!btn) return;
@@ -103,6 +93,7 @@
     panelEl.appendChild(el);
     positionPopup(el, opts.anchorEl);
     confirmEl = el;
+    el.querySelector('[data-action="confirm"]').focus(); // 4.20 焦点落点：入文档后聚焦「删除」
   }
 
   function closeConfirm() {
@@ -191,116 +182,6 @@
     toastEl.hidden = true;
   }
 
-  // ---------- 分类管理编排（标签「⋯」菜单打开 / 分类行内输入 / 删除确认条）----------
-  // 承接自 renderer.js（6.3 拆分计划）：控件级瞬态与交互编排同域；业务动作经 categoryOps 回调交回 renderer。
-
-  let categoryOps = null;
-  let categoryEditing = null; // 分类行内输入 { mode:'create' } | { mode:'rename', id }
-  let categoryPendingDelete = null; // 分类删除确认条 { id, name, count }
-
-  // renderer 注入：{ renderTabs, renderContent, countApps, createCategory, renameCategory,
-  //   deleteCategory, applyCategoryCommit, onCategoryCommitFailed }
-  function initCategoryManagement(ops) { categoryOps = ops; }
-
-  const getCategoryEditing = () => categoryEditing;
-  const getPendingDelete = () => categoryPendingDelete;
-
-  // 标签「⋯」菜单 / 标签右键等效入口——默认分类仅「重命名…」（删除入口不提供；F2.4）
-  function openCategoryMenu(anchorEl, category) {
-    const items = [{ label: '重命名…', action: 'rename' }];
-    if (category.builtin !== true) items.push({ label: '删除', action: 'delete' });
-    openMenu(anchorEl, items, (action) => {
-      if (action === 'rename') startCategoryEdit({ mode: 'rename', id: category.id });
-      else if (action === 'delete') openCategoryDeleteConfirm(category);
-    });
-  }
-
-  // ---------- 分类行内输入（新建 / 重命名；回车确认、Esc / 失焦取消）----------
-
-  function startCategoryEdit(editing) {
-    categoryEditing = editing;
-    categoryOps.renderTabs();
-  }
-
-  function cancelCategoryEdit() {
-    if (!categoryEditing) return;
-    categoryEditing = null;
-    categoryOps.renderTabs();
-  }
-
-  // 输入框事件生命周期（节点由 ui.buildTabBar 构建、渲染后由 renderer 挂接）
-  function attachCategoryInput(input) {
-    input.addEventListener('keydown', async (e) => {
-      if (e.isComposing || e.keyCode === 229) { e.stopPropagation(); return; } // 4.5 ① 组字态 keydown 不作数（回车选词 / Esc 取消组字不误触提交；stopPropagation 不进 Esc 逐层）
-      if (e.key === 'Enter') { e.preventDefault(); e.stopPropagation(); await commitCategoryEdit(input); }
-      else if (e.key === 'Escape') { e.stopPropagation(); cancelCategoryEdit(); }
-    });
-    input.addEventListener('blur', () => {
-      if (categoryEditing && document.hasFocus()) cancelCategoryEdit(); // 4.5 ② 失焦 = 取消（仅文档持焦时执行；窗口级失焦不误取消）
-    });
-  }
-
-  // 提交：空名拒绝（toast + 留在输入框）；落库经 categoryOps 交回 renderer
-  async function commitCategoryEdit(input) {
-    const editing = categoryEditing;
-    if (!editing || !input) return;
-    const name = input.value.trim();
-    if (!name) { toast('分类名不能为空', true); input.focus(); return; }
-    const res = editing.mode === 'create'
-      ? await categoryOps.createCategory(name)
-      : await categoryOps.renameCategory({ id: editing.id, name });
-    if (!res.ok) {
-      if (res.code === 'empty') { toast('分类名不能为空', true); input.focus(); }
-      else { cancelCategoryEdit(); categoryOps.onCategoryCommitFailed(res.code); }
-      return;
-    }
-    categoryEditing = null;
-    categoryOps.applyCategoryCommit(res, { editing }); // 状态应用 / 渲染 / 新分类成为活动标签 / save_failed
-  }
-
-  // ---------- 分类删除确认条（内容区顶部）----------
-
-  function openCategoryDeleteConfirm(category) {
-    categoryPendingDelete = { id: category.id, name: category.name, count: categoryOps.countApps(category.id) };
-    categoryOps.renderContent();
-  }
-
-  function cancelCategoryDeleteConfirm() {
-    if (!categoryPendingDelete) return;
-    categoryPendingDelete = null;
-    categoryOps.renderContent();
-  }
-
-  // 删除：确认动作经 categoryOps 交回 renderer（状态应用含「删除当前分类 → 切回未分类」）
-  async function confirmCategoryDelete() {
-    if (!categoryPendingDelete) return;
-    const id = categoryPendingDelete.id;
-    categoryPendingDelete = null;
-    const res = await categoryOps.deleteCategory(id);
-    if (!res.ok) {
-      categoryOps.renderContent();
-      categoryOps.onCategoryCommitFailed(res.code);
-      return;
-    }
-    categoryOps.applyCategoryCommit(res, { deletedCategoryId: id });
-  }
-
-  // 确认条点击路由（节点由 ui.buildConfirmBar 构建、渲染后由 renderer 挂接）
-  function attachConfirmBar(bar) {
-    bar.addEventListener('click', (e) => {
-      const btn = e.target.closest('[data-action]');
-      if (!btn) return;
-      if (btn.dataset.action === 'cancel') cancelCategoryDeleteConfirm();
-      else if (btn.dataset.action === 'confirm') confirmCategoryDelete();
-    });
-  }
-
-  // 面板显示时重置（「隐藏即弃临时态」；渲染由 renderer 驱动）
-  function resetCategoryUi() {
-    categoryEditing = null;
-    categoryPendingDelete = null;
-  }
-
   // ---------- 统一收口 ----------
 
   // Esc 逐层：关最上一层，返回是否关掉了东西
@@ -369,8 +250,7 @@
 
   global.SuqiComponents = {
     init,
-    openItemMenu,
-    openCategoryMenu,
+    openMenu,
     closeMenu,
     openConfirm,
     closeConfirm,
@@ -379,17 +259,6 @@
     isFormOpen,
     getTransientState,
     onTransientClosed,
-    initCategoryManagement,
-    getCategoryEditing,
-    getPendingDelete,
-    startCategoryEdit,
-    cancelCategoryEdit,
-    attachCategoryInput,
-    openCategoryDeleteConfirm,
-    cancelCategoryDeleteConfirm,
-    confirmCategoryDelete,
-    attachConfirmBar,
-    resetCategoryUi,
     dismissTop,
     closeAll,
     consumeItemClickSwallow,

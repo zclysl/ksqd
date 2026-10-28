@@ -14,6 +14,9 @@ import { setImeComposing } from './window.js';
 
 const PICK_FILTERS = [{ name: '程序', extensions: ['exe', 'lnk'] }];
 
+/** 4.11 固定文案（「打开安装位置」目标缺失路径，4.19）；与「启动失败：目标文件不存在」不合并 */
+const REVEAL_MISSING = '打开失败：目标文件不存在';
+
 function isRecord(value) {
   return value !== null && typeof value === 'object' && !Array.isArray(value);
 }
@@ -39,6 +42,21 @@ function resolveShortcutTarget(resolved) {
     console.warn('[速启] 快捷方式目标解析失败：', resolved, err);
     return null;
   }
+}
+
+/**
+ * 「打开安装位置」目标解析（4.19）：① 条目为 .lnk 且已登记 realPath 且在盘 → realPath（用户裁定：打开真实程序位置）；
+ * ② 否则条目路径在盘 → 条目路径（无登记值 / 登记值已失）；③ 都不可用 → null。
+ * 与 4.16 启动链的差异：启动链「原路径优先」，本链「realPath 优先」，两条链不共用选择顺序。
+ */
+function resolveRevealTarget(app) {
+  if (!app) return null;
+  if (catalog.isShortcutPath(app.path) && typeof app.realPath === 'string'
+    && app.realPath && fs.existsSync(app.realPath)) {
+    return app.realPath;
+  }
+  if (typeof app.path === 'string' && app.path && fs.existsSync(app.path)) return app.path;
+  return null;
 }
 
 export function registerIpcHandlers({
@@ -229,4 +247,22 @@ export function registerIpcHandlers({
 
   // #18 appIcon:get —— 本应用图标（顶栏，F7.3 / 4.17）：无入参、只读、main 侧会话内缓存；null → renderer 隐藏顶栏图标
   ipcMain.handle('appIcon:get', async () => ({ dataUrl: await getAppIconDataUrl() }));
+
+  // #19 category:reorder —— 分类重排（F2.7 / 4.18）；toIndex = 放在 categories 数组中的最终下标（1 起）；code ∈ builtin / missing / invalid
+  ipcMain.handle('category:reorder', (event, payload) => {
+    if (!isRecord(payload) || typeof payload.id !== 'string' || !Number.isInteger(payload.toIndex)) {
+      return { ok: false, code: 'invalid' };
+    }
+    return mutate((state) => catalog.reorderCategory(state, payload));
+  });
+
+  // #20 app:reveal —— 打开安装位置（F3.11 / 4.19）：renderer 只送 id，路径解析与存在性判定全在 main；
+  // 目标不存在 → {ok:false, message}（4.11 固定文案，renderer toast 不静默）
+  ipcMain.handle('app:reveal', (event, payload) => {
+    if (!isRecord(payload) || typeof payload.id !== 'string') return { ok: false, code: 'invalid' };
+    const target = resolveRevealTarget(catalog.findAppById(store.state, payload.id));
+    if (!target) return { ok: false, message: REVEAL_MISSING };
+    shell.showItemInFolder(target); // 打开资源管理器并选中该文件（十三节实测点 19）
+    return { ok: true };
+  });
 }

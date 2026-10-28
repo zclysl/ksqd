@@ -1,13 +1,16 @@
 // 速启 · renderer —— 会话状态与编排
 // 应用级状态（数据副本 / 活动标签）+ 事件绑定 + IPC 调用 + 整面板重渲染；
-// 控件级瞬态（菜单 / 行内确认 / 浮层 / toast / 分类管理编排）在 components.js，
-// 指针交互编排（悬停切标签 / 鼠标离开延迟隐藏 / 拖动排序）在 interactions.js，节点构建在 ui.js。
+// 控件级瞬态（菜单 / 行内确认 / 浮层 / toast）在 components.js，分类管理编排在 category-panel.js，
+// 条目右键菜单动作面在 item-actions.js，指针交互编排（悬停切标签 / 鼠标离开延迟隐藏 / 拖动排序）在
+// interactions.js（拖动核心在 drag-core.js），节点构建在 ui.js。
 // 加载形态：经典脚本（file:// 下 Chromium 以 CORS 拦截 ES 模块脚本）。
 (function () {
   'use strict';
 
   const ui = window.SuqiUI;
   const components = window.SuqiComponents;
+  const categoryPanel = window.SuqiCategoryPanel;
+  const itemActions = window.SuqiItemActions;
   const interactions = window.SuqiInteractions;
   const api = window.api;
 
@@ -73,15 +76,15 @@
   }
 
   function renderTabs() {
-    tabbarEl.replaceChildren(ui.buildTabBar(state.data.categories, state.activeCategoryId, components.getCategoryEditing()));
+    tabbarEl.replaceChildren(ui.buildTabBar(state.data.categories, state.activeCategoryId, categoryPanel.getCategoryEditing()));
     const input = tabbarEl.querySelector('.tab-input');
     if (input) {
-      components.attachCategoryInput(input);
+      categoryPanel.attachCategoryInput(input);
       input.focus();
       if (input.value) input.select();
     } else {
       scrollTabbarTo('.tab.active');
-      scrollTabbarTo('.tab-new'); // 4.6 多标签溢出：活动标签与「＋ 新建分类」均可见
+      scrollTabbarTo('.tab-new'); // 4.6 多标签溢出：活动标签与末尾「＋」按钮均可见
     }
   }
 
@@ -92,13 +95,13 @@
 
   function renderContent() {
     const nodes = [];
-    const pendingDelete = components.getPendingDelete();
+    const pendingDelete = categoryPanel.getPendingDelete();
     if (pendingDelete) {
       const target = findCategory(UNCATEGORIZED); // 迁移目标名取默认分类当前名（4.6 ③）
       const bar = ui.buildConfirmBar(
         `删除分类「${pendingDelete.name}」？其下 ${pendingDelete.count} 个软件将移入${target ? target.name : '未分类'}`,
       );
-      components.attachConfirmBar(bar);
+      categoryPanel.attachConfirmBar(bar);
       nodes.push(bar);
     }
     if (!state.data.apps.length) nodes.push(ui.buildEmptyGuide()); // 全部为空 → 两行引导（F4.4）
@@ -113,6 +116,8 @@
       }
     }
     contentEl.replaceChildren(...nodes);
+    // 4.20：确认条入文档后聚焦「删除」——焦点 + 原生激活（Enter / Space 派发一次 click）
+    if (pendingDelete) contentEl.querySelector('.confirm-bar [data-action="confirm"]').focus();
   }
 
   // 图标：先渲染首字符占位，取到后原位替换；结果缓存于会话内，避免重渲染时重复取用
@@ -128,24 +133,7 @@
     return null;
   }
 
-  // ---------- 菜单 / 确认 / 浮层（组件接回调，业务动作在此）----------
-
-  function openItemMenu(itemEl, app) {
-    components.openItemMenu({
-      anchorEl: itemEl,
-      onEdit: () => openAppForm({ mode: 'edit', appId: app.id, path: app.path, name: app.name, categoryId: app.categoryId }),
-      onDelete: () => components.openConfirm({
-        anchorEl: itemEl,
-        text: '移除该条目？（不删除软件本体）',
-        onConfirm: async () => {
-          const res = await guard(() => api.deleteApp(app.id));
-          if (res.ok) applyMutation(res, '已移除');
-        },
-      }),
-    });
-  }
-
-  // 分类管理落库收口（components 编排动作经回调交回）：状态应用 / 渲染 / save_failed 提示
+  // 分类管理落库收口（category-panel 编排动作经回调交回）：状态应用 / 渲染 / save_failed 提示
   // info: { editing }（新建 / 重命名成功）| { deletedCategoryId }（删除成功）
   function applyCategoryCommit(res, info) {
     if (info.editing) {
@@ -155,7 +143,7 @@
         const created = state.data.categories.find((c) => !before.has(c.id));
         if (created) state.activeCategoryId = created.id; // 新分类成为活动标签
       }
-      renderAll(); // 滚动保证（活动标签与「＋ 新建分类」可见）随 renderTabs 收口
+      renderAll(); // 滚动保证（活动标签与末尾「＋」按钮可见）随 renderTabs 收口
       if (res.warning === 'save_failed') components.toast('保存失败', true);
       return;
     }
@@ -247,35 +235,48 @@
     return false;
   }
 
+  // 分类拖动落位（F2.7 / 4.18）：categories 数组重排落库；
+  // 失败（builtin / missing / invalid）保留旧顺序——4.11 固定文案表无 reorder 专属文案，不发明文案，仅 console 留痕
+  async function onCategoryReorder({ id, toIndex }) {
+    const res = await guard(() => api.reorderCategory({ id, toIndex }));
+    if (!res.ok) {
+      console.warn('速启：分类重排被拒绝', res.code);
+      return false;
+    }
+    applyMutation(res, null); // save_failed → warning 语义（3.1）：内存态生效 + toast「保存失败」
+    return true;
+  }
+
   // ---------- 事件绑定 ----------
 
   function bindEvents() {
     addBtnEl.addEventListener('click', onAddClick);
 
     tabbarEl.addEventListener('click', (e) => {
-      if (components.getCategoryEditing()) return; // 行内输入期间忽略标签操作
+      if (interactions.consumeClickSwallow()) return; // 拖动排序吞掉拖后那次标签点击（4.18，与条目点击同口径）
+      if (categoryPanel.getCategoryEditing()) return; // 行内输入期间忽略标签操作
       const menuBtn = e.target.closest('.tab-menu-btn');
       if (menuBtn) {
         const tabEl = menuBtn.closest('.tab');
         const category = findCategory(tabEl.dataset.catId);
-        if (category) components.openCategoryMenu(tabEl, category);
+        if (category) categoryPanel.openCategoryMenu(tabEl, category);
         return;
       }
       if (e.target.closest('.tab-new')) {
-        components.startCategoryEdit({ mode: 'create' });
+        categoryPanel.startCategoryEdit({ mode: 'create' });
         return;
       }
       const tabEl = e.target.closest('.tab');
       if (tabEl) switchCategory(tabEl.dataset.catId);
     });
 
-    // 标签右键 = 「⋯」按钮等效入口（默认分类同样开放；菜单项构成见 components.openCategoryMenu）
+    // 标签右键 = 「⋯」按钮等效入口（默认分类同样开放；菜单项构成见 category-panel.openCategoryMenu）
     tabbarEl.addEventListener('contextmenu', (e) => {
       const tabEl = e.target.closest('.tab');
       if (!tabEl) return;
       e.preventDefault();
       const category = findCategory(tabEl.dataset.catId);
-      if (category) components.openCategoryMenu(tabEl, category);
+      if (category) categoryPanel.openCategoryMenu(tabEl, category);
     });
 
     // 标签栏溢出：滚轮映射为横向滚动
@@ -301,7 +302,7 @@
       if (!itemEl) return;
       e.preventDefault();
       const app = findApp(itemEl.dataset.appId);
-      if (app) openItemMenu(itemEl, app);
+      if (app) itemActions.openItemMenu(itemEl, app);
     });
 
     // 拖拽：取第一个文件送校验；多文件仅提示一次
@@ -323,8 +324,8 @@
     document.addEventListener('keydown', (e) => {
       if (e.key !== 'Escape') return;
       if (components.dismissTop()) return;
-      if (components.getCategoryEditing()) components.cancelCategoryEdit();
-      else if (components.getPendingDelete()) components.cancelCategoryDeleteConfirm();
+      if (categoryPanel.getCategoryEditing()) categoryPanel.cancelCategoryEdit();
+      else if (categoryPanel.getPendingDelete()) categoryPanel.cancelCategoryDeleteConfirm();
       else api.hidePanel();
     });
   }
@@ -334,7 +335,7 @@
   // 面板每次显示：重置临时 UI（浮层 / 菜单 / 行内确认 / 分类行内输入 / 删除确认条 / toast / 滚动位置）
   function onPanelShown() {
     components.closeAll();
-    components.resetCategoryUi();
+    categoryPanel.resetCategoryUi();
     interactions.onPanelShown(); // 4.5「鼠标已进入」标记重置 + 计时清理
     contentEl.scrollTop = 0;
     renderAll();
@@ -346,8 +347,8 @@
   async function init() {
     bindEvents();
     components.init({ panelEl, toastEl });
-    // 分类管理编排（components.js）：业务动作经回调交回（6.3 拆分计划）
-    components.initCategoryManagement({
+    // 分类管理编排（category-panel.js）：业务动作经回调交回（6.8 #7）
+    categoryPanel.initCategoryManagement({
       renderTabs,
       renderContent,
       countApps: (categoryId) => appsOf(categoryId).length,
@@ -357,7 +358,10 @@
       applyCategoryCommit,
       onCategoryCommitFailed: (code) => toastForCode(code, 'category'),
     });
-    // 指针交互编排（interactions.js）：切换复用 switchCategory、隐藏走 api.hidePanel、reorder 落库在 onReorderDrop
+    // 条目右键菜单动作面（item-actions.js）：表单 / IPC 兜底 / 落库收口经回调交回（6.8 #8）
+    itemActions.init({ openAppForm, guard, applyMutation });
+    // 指针交互编排（interactions.js）：切换复用 switchCategory、隐藏走 api.hidePanel、
+    // reorder 落库在 onReorderDrop / onCategoryReorder
     interactions.init({
       panelEl,
       tabbarEl,
@@ -367,6 +371,7 @@
       switchCategory,
       onHidePanel: () => api.hidePanel(),
       onReorder: onReorderDrop,
+      onCategoryReorder, // 分类拖动落位（4.18）
     });
     api.onPanelShown(onPanelShown);
     try {

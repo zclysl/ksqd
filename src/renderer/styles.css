@@ -145,7 +145,7 @@ body {
   user-select: text;
 }
 
-/* 「＋ 新建分类」幽灵按钮 */
+/* 末尾「＋」新建分类按钮（F2.3 / AC-28：仅符号 + 悬停 title；宽度随内容收缩） */
 .tab-new {
   flex: 0 0 auto;
   margin-left: 6px; padding: 4px 10px;
@@ -377,6 +377,13 @@ body {
 
 /* 拖动态：原位节点 = 半透明占位（十二节）；占位高亮便于辨认落点 */
 .item.is-dragging {
+  opacity: 0.4;
+  background: rgba(76, 141, 255, 0.08);
+  outline: 1px dashed rgba(76, 141, 255, 0.25);
+}
+
+/* 分类拖动态：原位标签 = 半透明占位（F2.7 / 4.18，与条目拖动同一套观感） */
+.tab.is-dragging {
   opacity: 0.4;
   background: rgba(76, 141, 255, 0.08);
   outline: 1px dashed rgba(76, 141, 255, 0.25);

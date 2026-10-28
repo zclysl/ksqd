@@ -53,7 +53,9 @@
   }
 
   function buildNewTab() {
-    return button('tab-new', '＋ 新建分类');
+    const node = button('tab-new', '＋'); // 仅符号（F2.3 / AC-28）：文字「新建分类」退到悬停 title
+    node.title = '新建分类';
+    return node;
   }
 
   // categories 顺序 = 展示顺序；editing: {mode:'create'} | {mode:'rename', id} | null

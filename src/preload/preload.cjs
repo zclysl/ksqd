@@ -32,6 +32,8 @@ const api = {
     ipcRenderer.send('panel:composing', { composing });
   },
   reorderApp: (payload) => ipcRenderer.invoke('app:reorder', payload),
+  reorderCategory: (payload) => ipcRenderer.invoke('category:reorder', payload),
+  revealApp: (id) => ipcRenderer.invoke('app:reveal', { id }),
   setHotkey: (accelerator) => ipcRenderer.invoke('hotkey:set', { accelerator }),
   closeHotkeyWindow: () => {
     ipcRenderer.send('hotkeyWindow:close');

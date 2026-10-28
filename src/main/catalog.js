@@ -1,4 +1,4 @@
-// 速启 · 分类与条目纯逻辑（设计档 4.6 / 4.7 / 4.10）
+// 速启 · 分类与条目纯逻辑（设计档 4.6 / 4.7 / 4.10 / 4.15 / 4.18）
 // 纯 Node 模块：不依赖 Electron、不触磁盘 —— 可脱离 Electron 直接 node --test。
 
 import path from 'node:path';
@@ -83,6 +83,29 @@ export function deleteCategory(state, id) {
     return { ...app, categoryId: UNCATEGORIZED_ID };
   });
   return { ok: true, state: { ...state, categories, apps }, moved };
+}
+
+/**
+ * 重排分类（F2.7 / 4.18）：toIndex = 落位后该分类在 categories 数组中的最终下标（「未分类」恒占 0 位，故下界为 1）。
+ * 「未分类」为被拖项 → builtin（F2.4 恒首位、不可拖；决策 #49：拒绝放逻辑层，不只靠界面不响应）；
+ * id 未命中 → missing；toIndex 非整数、< 1 或 > categories.length - 1 → invalid；三码均不改状态。
+ * 幂等：toIndex = 现位 → ok、状态不变（引用相等）；其余分类相对顺序不变（4.10：顺序 = 数组顺序）。
+ */
+export function reorderCategory(state, payload) {
+  const id = payload?.id;
+  const toIndex = payload?.toIndex;
+  if (id === UNCATEGORIZED_ID) return { ok: false, code: 'builtin' };
+  const category = findCategoryById(state, id);
+  if (!category) return { ok: false, code: 'missing' };
+  if (category.builtin) return { ok: false, code: 'builtin' };
+  if (!Number.isInteger(toIndex) || toIndex < 1 || toIndex > state.categories.length - 1) {
+    return { ok: false, code: 'invalid' };
+  }
+  const currentIndex = state.categories.indexOf(category);
+  if (currentIndex === toIndex) return { ok: true, state };
+  const rest = state.categories.filter((item) => item.id !== id);
+  rest.splice(toIndex, 0, category); // rest 下标与最终下标同值（「未分类」恒在 rest[0]，不需二次换算）
+  return { ok: true, state: { ...state, categories: rest } };
 }
 
 /** 新增条目（F3.1 / F3.2）：判重（F3.6）；名称空拒绝；分类缺省或不存在 → 未分类（4.10 归一化规则）；

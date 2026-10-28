@@ -1,6 +1,6 @@
 {
   "name": "suqi",
-  "version": "1.5.0",
+  "version": "1.6.0",
   "description": "速启 —— Windows 桌面软件快速启动器（常驻托盘 + 全局热键面板）",
   "private": true,
   "type": "module",

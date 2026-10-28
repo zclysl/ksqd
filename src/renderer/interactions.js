@@ -1,38 +1,44 @@
-// 速启 · interactions.js —— 面板指针交互编排（F2.6 悬停切标签 / F1.6 鼠标离开延迟隐藏 / F3.8 拖动排序与跨分类移动）
-// 职责：三机制的计时、抑制标记与拖动预览；业务动作（切换 / 隐藏 / 重排落库）经回调交回 renderer。
-// 抑制判定读 window.SuqiComponents 的统一打开态（4.5 抑制②「按 components.js 打开态统一判定」）。
+// 速启 · interactions.js —— 面板指针交互编排（F2.6 悬停切标签 / F1.6 鼠标离开延迟隐藏 /
+// F3.8 条目拖动排序与跨分类移动 / F2.7 分类拖动排序）
+// 职责：三机制的计时、抑制标记与拖动编排；业务动作（切换 / 隐藏 / 重排落库）经回调交回 renderer。
+// 拖动核心（4px 阈值 / pointer capture / clone 影构造与随光标 / 落位矩形命中 / 归位动画）在 drag-core.js，
+// 4.15 与 4.18 共用同一实现（6.8 #12）；「排序中」标记与两条抑制判定仍留本文件单点。
+// 抑制判定读 window.SuqiComponents 的统一打开态（4.5 抑制②「按 components.js 打开态统一判定」）
+// 与 window.SuqiCategoryPanel 的分类行内输入态。
 // 加载形态：经典脚本（file:// 下 Chromium 以 CORS 拦截 ES 模块脚本）。
 (function (global) {
   'use strict';
 
   const components = window.SuqiComponents;
+  const categoryPanel = window.SuqiCategoryPanel;
+  const core = window.SuqiDragCore;
 
   const HOVER_SWITCH_MS = 200; // 4.6 悬停切换迟滞（快速扫过多个标签不切换）
   const LEAVE_HIDE_MS = 300; // 4.5 鼠标离开延迟隐藏（移回取消）
-  const DRAG_THRESHOLD_PX = 4; // 4.15 阈值区分单击 / 拖动（十二节）
   const FALSE_LEAVE_INSET_PX = 4; // 4.5 假移出复核内缩（严格内部 = 假移出；与 pointerOutside 原矩形容差不同，不合并）
-  const RETURN_MS = 120; // 十二节 落位 / 取消归位动画（沿显示动画节奏）
+  const UNCATEGORIZED_ID = 'uncategorized'; // 「未分类」固定 id（4.10：恒首位、不可拖，4.18）
 
-  let opts = null; // { panelEl, tabbarEl, contentEl, getActiveCategoryId, countApps, switchCategory, onHidePanel, onReorder }
+  let opts = null; // { panelEl, tabbarEl, contentEl, getActiveCategoryId, countApps,
+  //   switchCategory, onHidePanel, onReorder, onCategoryReorder }
   let hideTimer = null;
   let hoverTimer = null;
   let hoverTab = null;
 
   // ---------- 抑制标记（4.5 四项 / 4.6 枚举读取）----------
   let entered = false; // 「鼠标已进入」标记（4.5 进入标记；panel:shown 重置）
-  let reordering = false; // 「排序中」标记（4.15；供 F1.6 抑制③ 与 F2.6 抑制读取）
+  let reordering = false; // 「排序中」标记（4.15 条目 / 4.18 分类共用；供 F1.6 抑制③ 与 F2.6 抑制读取）
   let dropping = false; // 「拖入中」标记（外部拖入；4.6 待实测点 12 回退形态）
   let picking = false; // 「＋」pickApp 在途（4.5 抑制④ 原生文件对话框）
   let pointer = null; // 最后指针位置（client 坐标；抑制解除收尾判定「指针在面板外」）
   let pointerFresh = true; // 指针坐标是否可信（文件对话框期间无事件 → 冻结）
   let releasePending = false; // 抑制解除时坐标冻结 → 首个指针事件到达后补判（4.5 收尾）
-  let clickSwallow = false; // 拖动态吞掉随后那次条目点击（4.15）
-  let drag = null;
+  let clickSwallow = false; // 拖动态吞掉随后那次点击（4.15 / 4.18）
+  let drag = null; // 当前拖动记录（同一次 pointerdown 只建一个：条目 / 分类二选一，4.18）
 
   // ---------- 抑制判定 ----------
 
   // 鼠标离开路径的抑制（4.5 抑制四项，不扩不缩）：① 唤出后鼠标从未进入；② 浮层或面板内菜单打开中（含行内确认）；
-  // ③ 条目拖动排序中；④ 原生文件对话框打开中。
+  // ③ 拖动排序中（条目 4.15 / 分类 4.18）；④ 原生文件对话框打开中。
   function leaveSuppressed() {
     if (!entered) return true; // ①
     const t = components.getTransientState();
@@ -43,7 +49,7 @@
   // 面板内菜单不抑制——到点先收菜单再切换（4.6 触发语义）。
   function hoverSuppressed() {
     const t = components.getTransientState();
-    return reordering || dropping || Boolean(components.getCategoryEditing()) || t.form || t.confirm;
+    return reordering || dropping || Boolean(categoryPanel.getCategoryEditing()) || t.form || t.confirm;
   }
 
   function pointerOutside() {
@@ -112,42 +118,23 @@
     }, HOVER_SWITCH_MS);
   }
 
-  // ---------- 拖动排序（F3.8 / 4.15，pointer 事件自绘）----------
+  // ---------- 拖动排序（F3.8 / 4.15 条目、F2.7 / 4.18 分类；pointer 事件自绘）----------
 
-  function beginDrag(e) {
-    const d = drag;
-    const item = d.item;
-    const rect = item.getBoundingClientRect();
-    d.active = true;
-    d.startRect = rect;
-    d.grabX = d.startX - rect.left;
-    d.grabY = d.startY - rect.top;
-    item.classList.add('is-dragging'); // 原位节点 = 半透明占位（十二节）
-    const ghost = item.cloneNode(true);
-    ghost.classList.remove('is-dragging'); // 半透明占位只留原位节点；clone 影为实卡（十二节）
-    ghost.classList.add('drag-ghost');
-    ghost.style.width = `${Math.round(rect.width)}px`;
-    ghost.style.height = `${Math.round(rect.height)}px`;
-    ghost.style.left = `${e.clientX - d.grabX}px`;
-    ghost.style.top = `${e.clientY - d.grabY}px`;
-    document.body.appendChild(ghost);
-    d.ghost = ghost;
-    reordering = true; // 「排序中」标记（4.15）
+  // 进入拖动态：核心建影 + 置「排序中」标记（两处拖动共用同一个 reordering，4.18）
+  function beginDrag(d) {
+    core.activate(d.session);
+    reordering = true; // 「排序中」标记（4.15 / 4.18）：F1.6 抑制③ 与 F2.6 抑制读它
     opts.panelEl.classList.add('is-reordering'); // 光标 grabbing（十二节）
-    try {
-      item.setPointerCapture(d.pointerId); // 面板外松手的事件送达（十三节实测点 10）
-    } catch (err) {
-      // 捕获不可用 → 窗口 blur 兜底取消（语义不变）
-    }
   }
 
   // 占位随光标落点在网格内滑动预览插入位置（4.15）；网格外不动占位
-  function previewDrop(x, y) {
+  function previewDrop(d, x, y) {
+    const item = d.session.node;
     const grid = opts.contentEl.querySelector('.grid');
     if (!grid) return;
     const rect = grid.getBoundingClientRect();
     if (x < rect.left || x > rect.right || y < rect.top || y > rect.bottom) return;
-    const items = [...grid.querySelectorAll('.item')].filter((el) => el !== drag.item);
+    const items = [...grid.querySelectorAll('.item')].filter((el) => el !== item);
     let index = 0;
     for (const el of items) {
       const r = el.getBoundingClientRect();
@@ -157,33 +144,21 @@
       index += 1;
     }
     const ref = items[index] || null;
-    if (drag.item.parentNode === grid && drag.item.nextSibling === ref) return; // 位置不变
-    grid.insertBefore(drag.item, ref);
+    if (item.parentNode === grid && item.nextSibling === ref) return; // 位置不变
+    grid.insertBefore(item, ref);
   }
 
   // 取消 / 失败：占位移回原位（顺序不变；无 IPC 的取消路径不经重渲染）
   function restorePreview(d) {
+    if (d.kind !== 'item') return; // 分类拖动无原位预览（落位在松手时按左右半判定，4.18）
     const grid = opts.contentEl.querySelector('.grid');
     if (!grid) return;
-    if (d.next && d.next.parentNode === grid) grid.insertBefore(d.item, d.next);
-    else grid.appendChild(d.item);
+    const item = d.session.node;
+    if (d.session.next && d.session.next.parentNode === grid) grid.insertBefore(item, d.session.next);
+    else grid.appendChild(item);
   }
 
-  // 落位 / 取消归位动画（十二节 120ms）：clone 影回到槽位后清理
-  function settleGhost(d, target) {
-    const ghost = d.ghost;
-    if (!ghost) return;
-    ghost.style.transition = `left ${RETURN_MS}ms ease-out, top ${RETURN_MS}ms ease-out, opacity ${RETURN_MS}ms ease-out`;
-    ghost.style.left = `${target.left}px`;
-    ghost.style.top = `${target.top}px`;
-    ghost.style.opacity = '0';
-    setTimeout(() => {
-      ghost.remove();
-      d.item.classList.remove('is-dragging'); // 成功路径该节点已被重渲染替换，此处为空操作
-    }, RETURN_MS + 10);
-  }
-
-  // 拖动结束复位（含取消）：「排序中」标记复位 + 抑制解除收尾（4.15）
+  // 拖动结束复位（含取消）：「排序中」标记复位 + 抑制解除收尾（4.15 / 4.18）
   function endReordering() {
     reordering = false;
     opts.panelEl.classList.remove('is-reordering');
@@ -192,40 +167,40 @@
 
   function onPointerUp(e) {
     const d = drag;
-    if (!d || e.pointerId !== d.pointerId) return;
+    if (!d || e.pointerId !== d.session.pointerId) return;
     drag = null;
-    if (!d.active) return; // 未超阈值松手 = 普通单击（启动路径不变）
+    if (!d.session.active) return; // 未超阈值松手 = 普通单击（启动 / 切标签 / 开菜单不变）
     e.preventDefault();
-    clickSwallow = true; // 拖动态吞 click（4.15）
-    const payload = dropPayload(d, e); // 三级落点判定（4.15）；null = 取消
-    const finalRect = d.item.getBoundingClientRect(); // 占位最终槽位（落位动画目标）
+    clickSwallow = true; // 拖动态吞 click（4.15 / 4.18）
+    const payload = d.kind === 'category' ? categoryDropPayload(d, e) : dropPayload(d, e); // null = 取消
+    const finalRect = d.session.node.getBoundingClientRect(); // 占位最终槽位（落位动画目标）
     endReordering();
     if (!payload) {
       // 落点无效（顶栏 / 标签栏空白 / 「＋」区 / 空态占位 / 面板外松手）→ 取消：顺序与分类均不变、无 IPC
       restorePreview(d);
-      settleGhost(d, d.startRect);
+      core.settle(d.session, d.session.startRect);
       return;
     }
     // 有效落点 → 重排 / 跨分类移动落库（动作经回调交回 renderer）；失败（missing / invalid）保留旧顺序与旧分类
-    Promise.resolve(opts.onReorder(payload)).then((applied) => {
+    const apply = d.kind === 'category' ? opts.onCategoryReorder : opts.onReorder;
+    Promise.resolve(apply(payload)).then((applied) => {
       if (!applied) restorePreview(d);
-      settleGhost(d, applied ? finalRect : d.startRect);
+      core.settle(d.session, applied ? finalRect : d.session.startRect);
     }).catch(() => {
       restorePreview(d);
-      settleGhost(d, d.startRect);
+      core.settle(d.session, d.session.startRect);
     });
   }
 
-  // 三级落点判定（4.15，自上而下）：① 分类标签矩形 → 移入该分类；② 内容区网格 → 同分类重排；
+  // 条目三级落点判定（4.15，自上而下）：① 分类标签矩形 → 移入该分类；② 内容区网格 → 同分类重排；
   // ③ 其余（顶栏 / 标签栏空白 / 「＋」区 / 空态占位 / 面板外）→ 取消（null）。
   // 只读标签矩形与 data-cat-id、不调 switchCategory —— 拖动中经过标签栏不切标签（4.15）。
   function dropPayload(d, e) {
     const sourceCategoryId = d.sourceCategoryId ?? opts.getActiveCategoryId(); // 等价来源兜底（4.15）
-    for (const tab of opts.tabbarEl.querySelectorAll('.tab')) { // ① 标签矩形命中（横向滚动下仍是视口坐标）
-      const r = tab.getBoundingClientRect();
-      if (e.clientX < r.left || e.clientX > r.right || e.clientY < r.top || e.clientY > r.bottom) continue;
-      if (!tab.dataset.catId) break; // 无分类锚点的标签（防御）→ 按无效落点取消
-      const categoryId = tab.dataset.catId;
+    const hit = core.hitRects(opts.tabbarEl.querySelectorAll('.tab'), e.clientX, e.clientY); // ① 标签矩形命中
+    if (hit) {
+      const categoryId = hit.element.dataset.catId;
+      if (!categoryId) return null; // 无分类锚点的标签（防御）→ 按无效落点取消
       const count = opts.countApps(categoryId);
       // 落位序位送值（父侧裁定）：自己所在分类 → 条目数-1（落末尾）；他类 → 该分类当前条目数（追加末尾，空分类即 0）
       return { id: d.id, categoryId, toIndex: categoryId === sourceCategoryId ? count - 1 : count, sourceCategoryId };
@@ -238,18 +213,36 @@
     return {
       id: d.id,
       categoryId: opts.getActiveCategoryId(),
-      toIndex: [...grid.querySelectorAll('.item')].indexOf(d.item), // 占位最终序位（4.15）
+      toIndex: [...grid.querySelectorAll('.item')].indexOf(d.session.node), // 占位最终序位（4.15）
       sourceCategoryId,
     };
+  }
+
+  // 分类落位（4.18）：目标标签矩形 → 左右半决定前插 / 后插；自身 / 空白处 / 「＋」/ 面板外 → 取消（null，无 IPC）。
+  // 下标换算（j = 被拖标签现下标、i = 目标标签下标）：目标在 rest 中的下标 = i - (j < i ? 1 : 0)；
+  // 落左半 → 送该值、落右半 → 送该值 + 1；目标为「未分类」→ 恒送 1（恒首位、不得后移，十节 #73）。
+  function categoryDropPayload(d, e) {
+    const tabs = [...opts.tabbarEl.querySelectorAll('.tab')];
+    const hit = core.hitRects(tabs, e.clientX, e.clientY);
+    if (!hit) return null;
+    const target = hit.element;
+    const targetId = target.dataset.catId;
+    if (!targetId) return null;
+    if (target === d.session.node) return null; // 落点是被拖标签自身 → 无操作
+    if (targetId === UNCATEGORIZED_ID) return { id: d.id, toIndex: 1 };
+    const j = tabs.indexOf(d.session.node);
+    const i = tabs.indexOf(target);
+    const restIndex = i - (j < i ? 1 : 0);
+    return { id: d.id, toIndex: hit.half === 'left' ? restIndex : restIndex + 1 };
   }
 
   function cancelDrag() {
     const d = drag;
     drag = null;
-    if (!d || !d.active) return;
+    if (!d || !d.session.active) return;
     clickSwallow = true;
     restorePreview(d);
-    settleGhost(d, d.startRect);
+    core.settle(d.session, d.session.startRect);
     endReordering();
   }
 
@@ -286,41 +279,56 @@
       clearHoverTimer(); // 离开标签取消；移到另一标签重新起计
     });
 
-    // 拖动排序（F3.8）：pointerdown 记起点，移动超阈值进拖动态
+    // 条目拖动排序（F3.8 / 4.15）：pointerdown 记起点，移动超阈值进拖动态
     contentEl.addEventListener('pointerdown', (e) => {
       clickSwallow = false; // 每次按下重新起算（拖动取消路径不再吞后续单击）
       if (e.button !== 0 || drag) return;
       const item = e.target.closest('.item');
       if (!item) return;
       drag = {
-        item,
+        kind: 'item',
+        session: core.createSession({ node: item, pointerId: e.pointerId, startX: e.clientX, startY: e.clientY }),
         id: item.dataset.appId,
         sourceCategoryId: item.closest('[data-cat-id]')?.dataset.catId ?? null, // 来源分类（4.15：落点分类 = 来源分类 → 同分类重排语义）
-        pointerId: e.pointerId,
-        startX: e.clientX,
-        startY: e.clientY,
-        next: item.nextSibling, // 取消归位锚点
-        active: false,
       };
       pointer = { x: e.clientX, y: e.clientY };
     });
-    document.addEventListener('pointermove', (e) => {
-      if (!drag || e.pointerId !== drag.pointerId) return;
+
+    // 分类拖动排序（F2.7 / 4.18）：tabbarEl 上 pointerdown 记起点——排除「⋯」菜单按钮与「未分类」（不可拖）；
+    // 分类行内输入期间忽略标签操作（4.6 既有规则）。
+    tabbarEl.addEventListener('pointerdown', (e) => {
+      clickSwallow = false;
+      if (e.button !== 0 || drag) return;
+      if (categoryPanel.getCategoryEditing()) return;
+      if (e.target.closest('.tab-menu-btn')) return;
+      const tab = e.target.closest('.tab');
+      if (!tab || !tab.dataset.catId) return;
+      if (tab.dataset.catId === UNCATEGORIZED_ID) return; // 「未分类」拖不动（F2.4 恒首位；无 clone 影）
+      drag = {
+        kind: 'category',
+        session: core.createSession({ node: tab, pointerId: e.pointerId, startX: e.clientX, startY: e.clientY }),
+        id: tab.dataset.catId,
+      };
       pointer = { x: e.clientX, y: e.clientY };
-      if (!drag.active) {
-        if (Math.hypot(e.clientX - drag.startX, e.clientY - drag.startY) <= DRAG_THRESHOLD_PX) return;
-        beginDrag(e);
+    });
+
+    document.addEventListener('pointermove', (e) => {
+      const d = drag;
+      if (!d || e.pointerId !== d.session.pointerId) return;
+      pointer = { x: e.clientX, y: e.clientY };
+      if (!d.session.active) {
+        if (!core.exceedsThreshold(d.session, e.clientX, e.clientY)) return;
+        beginDrag(d);
       }
-      drag.ghost.style.left = `${e.clientX - drag.grabX}px`;
-      drag.ghost.style.top = `${e.clientY - drag.grabY}px`;
-      previewDrop(e.clientX, e.clientY);
+      core.follow(d.session, e.clientX, e.clientY);
+      if (d.kind === 'item') previewDrop(d, e.clientX, e.clientY);
     });
     document.addEventListener('pointerup', onPointerUp);
     document.addEventListener('pointercancel', cancelDrag);
-    window.addEventListener('blur', cancelDrag); // 拖动中窗口 blur → 取消（防御）
+    window.addEventListener('blur', cancelDrag); // 拖动中窗口 blur → 取消（防御，4.15 / 4.18）
 
     // 最后指针位置（抑制解除收尾判定「指针在面板外」）；坐标冻结解除后补判收尾；
-    // 首个鼠标事件亦是「拖入中」标记的兜底复位（见上）
+    // 首个鼠标事件亦是「拖入中」标记的兜底复位（见下）
     document.addEventListener('mousemove', (e) => {
       pointer = { x: e.clientX, y: e.clientY };
       pointerFresh = true;
@@ -367,7 +375,7 @@
     else releasePending = true;
   }
 
-  // 拖动态吞 click 的消费口（renderer 条目点击前置问）
+  // 拖动态吞 click 的消费口（renderer 条目点击 / 标签点击前置问，4.15 / 4.18）
   function consumeClickSwallow() {
     const swallow = clickSwallow;
     clickSwallow = false;
